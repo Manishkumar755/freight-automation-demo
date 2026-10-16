@@ -1,22 +1,25 @@
 """
-Rate-based quote engine (demo).
+Rate-based freight quote engine (demo).
 
-Air: chargeable weight = max(actual kg, volumetric kg), price = billable kg x rate, with a minimum charge.
-Sea: flat rate per container from the rate table.
+Rules implemented:
+  - Air:      chargeable weight = max(actual kg, volumetric kg); volumetric = L x W x H x pieces / 6000
+  - By Road:  price = actual kg x rate, with a minimum charge
+  - Sea FCL:  flat rate per container (dimensions do not change the price)
 
-All rates in rates_sample.csv are SAMPLE numbers for demo purposes only.
+All numbers in rates_sample.csv are SAMPLE values for demo purposes only.
 """
 import csv
 from dataclasses import dataclass
 
-AIR_VOLUMETRIC_DIVISOR = 6000  # cm3 per kg (standard air volumetric factor)
+AIR_VOLUMETRIC_DIVISOR = 6000  # cm3 per kg, standard air volumetric factor
+VALID_MODES = ("air", "road", "fcl20", "fcl40")
 
 
 @dataclass
 class Shipment:
     origin: str
     destination: str
-    mode: str                  # "air", "fcl20", "fcl40"
+    mode: str
     weight_kg: float = 0.0
     length_cm: float = 0.0
     width_cm: float = 0.0
@@ -24,50 +27,63 @@ class Shipment:
     pieces: int = 1
 
 
-def load_rates(path: str) -> dict:
+def load_rates(path):
     rates = {}
     with open(path, newline="", encoding="utf-8") as f:
         for row in csv.DictReader(f):
-            key = (row["origin"], row["destination"], row["mode"])
+            key = (row["origin"].strip().upper(),
+                   row["destination"].strip().upper(),
+                   row["mode"].strip().lower())
             rates[key] = {
                 "rate": float(row["rate"]),
                 "min_charge": float(row["min_charge"]),
-                "currency": row["currency"],
+                "currency": row["currency"].strip(),
             }
     return rates
 
 
-def chargeable_weight(s: Shipment) -> float:
-    volumetric = s.pieces * s.length_cm * s.width_cm * s.height_cm / AIR_VOLUMETRIC_DIVISOR
-    return max(s.weight_kg, volumetric)
+def quote(s, rates):
+    if s.mode not in VALID_MODES:
+        raise ValueError(f"Unknown mode '{s.mode}'. Use one of {VALID_MODES}.")
+    if s.weight_kg < 0 or min(s.length_cm, s.width_cm, s.height_cm) < 0:
+        raise ValueError("Weight and dimensions cannot be negative.")
+    if s.pieces < 1:
+        raise ValueError("Pieces must be at least 1.")
 
+    key = (s.origin.strip().upper(), s.destination.strip().upper(), s.mode)
+    r = rates.get(key)
+    if r is None:
+        return {
+            "status": "no_rate",
+            "message": f"No sample rate for {key[0]} to {key[1]} ({s.mode}). Route to the ops team.",
+        }
 
-def quote(s: Shipment, rates: dict) -> dict:
-    key = (s.origin, s.destination, s.mode)
-    if key not in rates:
-        # Never invent a price. Send it to a human instead.
-        return {"status": "manual_review", "reason": f"No rate found for {key}"}
+    if s.mode.startswith("fcl"):
+        return {
+            "status": "ok",
+            "basis": "flat rate per container",
+            "amount": round(r["rate"], 2),
+            "currency": r["currency"],
+            "note": "SAMPLE rate - demo only",
+        }
 
-    r = rates[key]
+    volumetric = None
     if s.mode == "air":
-        billable = round(chargeable_weight(s), 1)
-        amount = max(billable * r["rate"], r["min_charge"])
-        basis = f"{billable} kg chargeable x {r['rate']} {r['currency']}/kg (min {r['min_charge']})"
+        volumetric = s.length_cm * s.width_cm * s.height_cm * s.pieces / AIR_VOLUMETRIC_DIVISOR
+        billable = max(s.weight_kg, volumetric)
+        basis = "chargeable weight (greater of actual and volumetric)"
     else:
-        amount = r["rate"]
-        basis = f"per {s.mode.upper()} container"
+        billable = s.weight_kg
+        basis = "actual weight"
 
+    amount = max(billable * r["rate"], r["min_charge"])
     return {
-        "status": "quoted",
+        "status": "ok",
+        "basis": basis,
+        "actual_kg": round(s.weight_kg, 2),
+        "volumetric_kg": round(volumetric, 2) if volumetric is not None else None,
+        "billable_kg": round(billable, 2),
         "amount": round(amount, 2),
         "currency": r["currency"],
-        "basis": basis,
-        "note": "Indicative quote. Final rate confirmed by ops team.",
+        "note": "SAMPLE rate - demo only",
     }
-
-
-if __name__ == "__main__":
-    rates = load_rates("rates_sample.csv")
-    demo = Shipment("DEL", "SIN", "air", weight_kg=120, length_cm=100, width_cm=80, height_cm=60, pieces=2)
-    print(quote(demo, rates))
-    print(quote(Shipment("DEL", "LHR", "air", weight_kg=50), rates))

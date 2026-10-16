@@ -1,41 +1,70 @@
-# Prologis Freight: Automation Prototype
+# Prologis Freight Automation Prototype
 
-Three small building blocks for freight operations, built as an interview demo.
+A small, working prototype of three freight-operations automations, built with Python, Streamlit, and the Claude API.
 
-| File | What it does |
-|---|---|
-| `quote_engine.py` | Rate-table quote for air (chargeable weight) and sea (per container). Unknown lanes go to manual review. |
-| `doc_extractor.py` | Sends invoice/BL text to Claude, gets structured JSON, flags low-confidence results for human review. |
-| `email_triage.py` | Classifies an email, routes it to a team, drafts a reply. Replies require human approval. |
-| `main.py` | Runs all three demos. |
+| # | Tool | What it does | Needs API key? |
+|---|------|--------------|----------------|
+| 1 | Quote engine | Rate-based quote for Air, By Road, Sea FCL 20', Sea FCL 40'. Air uses chargeable weight (greater of actual and volumetric). | No |
+| 2 | Document extraction | Reads an invoice (.txt or text-based .pdf) and returns structured JSON. Validates the output and flags anything uncertain for human review. | Yes |
+| 3 | Email triage | Classifies a customer email, picks the owning team, drafts a reply. Drafts containing prices are blocked. A human approves before anything is sent. | Yes |
+
+## Design principles
+
+- **Human in the loop.** Nothing is sent or booked automatically. Approvals are written to an audit log.
+- **Never trust model output.** JSON is parsed and validated in code. Missing fields, bad formats, and low confidence (below 0.85) are flagged.
+- **Documents are data.** Text inside uploaded documents is wrapped in `<document>` tags, and the instructions tell the model to ignore any instructions inside it.
+- **No price in AI drafts.** A rule-based check blocks drafts that contain prices and replaces them with a safe template.
+- **Honest data.** All rates in `rates_sample.csv` are sample values, not real pricing.
+
+## Project structure
+
+```
+app.py              Streamlit UI (3 tabs)
+main.py             Command-line demo runner
+quote_engine.py     Rate and volumetric calculation (pure Python, no API)
+doc_extractor.py    Claude extraction + validation + review flags
+email_triage.py     Claude triage + routing + price guard
+rates_sample.csv    Sample rate table
+sample_invoice.txt  Sample commercial invoice
+tests/              Unit tests (quote, extraction, triage)
+run_tests_offline.py  Runs the tests without pytest
+```
 
 ## Setup
 
 ```bash
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY=your_key_here      # Windows PowerShell: $env:ANTHROPIC_API_KEY="your_key_here"
-python main.py
 ```
 
-The quote demo runs without an API key. The Claude demos are skipped unless the key is set.
+Optional, for the AI tabs:
 
-## Design choices to explain in the interview
+```bash
+export ANTHROPIC_API_KEY="your-key"     # Windows PowerShell: $env:ANTHROPIC_API_KEY="your-key"
+```
 
-- **No guessed prices.** The quote engine returns `manual_review` for unknown lanes instead of inventing a rate.
-- **Human in the loop.** Document extraction flags `needs_review` when confidence is below 0.85 or required fields are missing. Email drafts are never sent automatically.
-- **Structured output.** Every LLM call asks for JSON and validates it, so downstream code (Excel, DB, n8n) can rely on the shape.
-- **Model is configurable.** Set `CLAUDE_MODEL` to change it without editing code.
+Never commit your API key to the code or to GitHub.
 
-## Connecting to n8n (for the demo)
+## Run
 
-1. **Gmail Trigger** node: fires on new email to the ops inbox.
-2. **HTTP Request** node: sends subject and body to a small Flask/FastAPI wrapper around `email_triage.triage()`.
-3. **Switch** node: branches on `category`.
-4. **Gmail** node: sends the draft to the routed team for approval, not to the customer.
-5. **Google Sheets** node: logs every email with category, urgency, and status.
+```bash
+streamlit run app.py          # Web UI
+python main.py                # Offline quote demo in terminal
+python main.py --llm          # Also runs extraction and triage (needs key)
+python run_tests_offline.py   # Tests (or: pytest)
+```
 
-## Limitations (say these openly)
+## Limitations (stated openly)
 
-- Rates in `rates_sample.csv` are made up for the demo.
-- Scanned PDFs need OCR before extraction. `read_pdf_text` only works on text-based PDFs.
-- Accuracy needs testing on real documents. Build a set of 20 to 30 labelled samples and measure field-level accuracy before any automation goes live.
+- Rates are sample numbers. Real pricing needs the company's rate cards and surcharges.
+- Scanned PDFs need OCR first. The reader only works on text-based PDFs.
+- Accuracy is not yet measured. Before any live use, build 20 to 30 labelled sample documents and measure field-level accuracy.
+- The "send" step is simulated. Connecting it to email or a CRM needs authentication, error handling, and a retry strategy.
+- Email routing addresses are placeholders (`example.com`).
+
+## Production path (next steps)
+
+1. Measure accuracy on a labelled set of 20 to 30 real documents, field by field.
+2. Replace sample rates with the live rate table, with versioning and effective dates.
+3. Add OCR for scanned documents.
+4. Move approvals and logs into a database, and add user login and roles.
+5. Connect to n8n or the company's email and CRM, with human approval kept as a required step.

@@ -1,5 +1,6 @@
 origin,destination,mode,rate,min_charge,currency
 DEL,SIN,air,4.20,80,USD
 DEL,DXB,air,3.10,60,USD
+DEL,KTM,road,0.35,25,USD
 INNSA,CNSHA,fcl40,1650,0,USD
-INNSA,SGSIN,fcl20,780,0,USD
+INNSA,SGSIN,fcl20,700,0,USD
