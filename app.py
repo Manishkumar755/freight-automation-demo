@@ -70,19 +70,20 @@ with tab_quote:
             st.json(result)
             log_event("quote", {"origin": origin, "destination": destination, "mode": mode, "status": result["status"]})
 
-# ---------- Tab 2: document extraction (Claude) ----------
+#---------- Tab 2: document extraction  ----------
 with tab_doc:
     st.subheader("Shipping document to structured data")
     st.caption("Extracts fields into JSON. Low-confidence or incomplete results are flagged for human review.")
     upload = st.file_uploader("Upload invoice (.txt or text-based .pdf)", type=["txt", "pdf"])
-    use_sample = st.checkbox("Use sample_invoice.txt", value=True)
+    use_sample = st.checkbox("Use sample_invoice.txt", value=False)
 
     if st.button("Extract fields"):
         try:
             if upload is not None and not use_sample:
                 text = read_document(upload, upload.name)
             else:
-                text = read_document(BASE / "sample_invoice.txt")
+                with open(BASE / "sample_invoice.txt", "rb") as f:
+    text = read_document(f, "sample_invoice.txt")
             result = extract(text)
         except RuntimeError as e:
             st.error(str(e))
@@ -98,7 +99,7 @@ with tab_doc:
             st.json(result.get("data") or {})
             log_event("extraction", {"needs_review": result["needs_review"], "problems": result.get("problems", [])})
 
-# ---------- Tab 3: email triage (Claude, human approval) ----------
+# ---------- Tab 3: email triage ( human approval) ----------
 with tab_email:
     st.subheader("Customer email triage")
     st.caption("Classifies the email, routes it, and drafts a reply. Nothing is sent until a human approves.")
