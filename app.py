@@ -83,7 +83,7 @@ with tab_doc:
                 text = read_document(upload, upload.name)
             else:
                 with open(BASE / "sample_invoice.txt", "rb") as f:
-                text = read_document(f, "sample_invoice.txt")
+                    text = read_document(f, "sample_invoice.txt")
             result = extract(text)
         except RuntimeError as e:
             st.error(str(e))
