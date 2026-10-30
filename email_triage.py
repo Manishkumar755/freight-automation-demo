@@ -40,3 +40,5 @@ def triage_email(email_text: str, api_key: str | None = None) -> dict:
         data["priority"] = "medium"
     data["needs_human"] = bool(data.get("needs_human", True))
     return data
+# alias so that app.py's `from email_triage`works
+triage = triage_email
