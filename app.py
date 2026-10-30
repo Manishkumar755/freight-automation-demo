@@ -75,15 +75,33 @@ with tab_quote:
             log_event("quote", {"origin": origin, "destination": destination, "mode": mode, "status": result["status"]})
 
 #---------- Tab 2: document extraction  ----------
-if uploaded_file is not None:
-    # Pass the uploaded file object so doc_extractor reads it correctly
-    result = extract(uploaded_file, filename=uploaded_file.name, api_key=api_key)
-else:
-    result = extract_text(sample_text, api_key=api_key)
+with tab_doc:
+    st.subheader("Shipping document to structured data")
+    st.caption("Extracts fields into JSON. Low-confidence or incomplete results are flagged for human review.")
 
-st.json(result)
-if result["needs_review"]:
-    st.warning("Some fields are missing or confidence is low. Human review is required.")
+    uploaded_file = st.file_uploader(
+        "Upload invoice (.txt or text-based .pdf)",
+        type=["txt", "pdf"],
+    )
+    use_sample = st.checkbox("Use sample_invoice.txt")
+    sample_text = (BASE / "sample_invoice.txt").read_text(encoding="utf-8") if use_sample else None
+
+    if st.button("Extract fields"):
+        try:
+            if uploaded_file is not None:
+                result = extract(uploaded_file, filename=uploaded_file.name, api_key=api_key)
+            elif sample_text is not None:
+                result = extract_text(sample_text, api_key=api_key)
+            else:
+                st.info("Upload a file or tick 'Use sample_invoice.txt' first.")
+                result = None
+
+            if result is not None:
+                st.json(result)
+                if result["needs_review"]:
+                    st.warning("Some fields are missing or confidence is low. Human review is required.")
+        except LLMError as e:
+            st.error(str(e))
 
 # ---------- Tab 3: email triage ( human approval) ----------
 with tab_email:
