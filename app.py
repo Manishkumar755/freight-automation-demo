@@ -1,7 +1,3 @@
-"""
-Streamlit demo UI: three tools in one place.
-Run:  streamlit run app.py
-"""
 import datetime
 import json
 import os
@@ -9,9 +5,10 @@ from pathlib import Path
 
 import streamlit as st
 
-from doc_extractor import extract, read_document
+from doc_extractor import extract, extract_text
 from email_triage import triage
 from quote_engine import VALID_MODES, Shipment, load_rates, quote
+from llm_client import LLMError
 
 BASE = Path(__file__).parent
 LOG = BASE / "audit_log.jsonl"
@@ -31,9 +28,16 @@ st.caption("Demo project. Rates and emails are sample data. A human approves eve
 
 with st.sidebar:
     st.subheader("Settings")
-    key = st.text_input("Anthropic API key (optional)", type="password", value=os.getenv("ANTHROPIC_API_KEY", ""))
-    if key:
-        os.environ["ANTHROPIC_API_KEY"] = key
+    try:
+        default_key = st.secrets["GEMINI_API_KEY"]
+    except Exception:
+        default_key = ""
+    api_key = st.text_input(
+        "Gemini API key (optional)",
+        value=default_key,
+        type="password",
+        help="Needed for document extraction and email triage. Get one from aistudio.google.com.",
+    )
     st.caption("Quote engine works without a key. Document and email tools need one.")
 
 tab_quote, tab_doc, tab_email = st.tabs(["1. Quote engine", "2. Document extraction", "3. Email triage"])
@@ -71,33 +75,15 @@ with tab_quote:
             log_event("quote", {"origin": origin, "destination": destination, "mode": mode, "status": result["status"]})
 
 #---------- Tab 2: document extraction  ----------
-with tab_doc:
-    st.subheader("Shipping document to structured data")
-    st.caption("Extracts fields into JSON. Low-confidence or incomplete results are flagged for human review.")
-    upload = st.file_uploader("Upload invoice (.txt or text-based .pdf)", type=["txt", "pdf"])
-    use_sample = st.checkbox("Use sample_invoice.txt", value=False)
+if uploaded_file is not None:
+    # Pass the uploaded file object so doc_extractor reads it correctly
+    result = extract(uploaded_file, filename=uploaded_file.name, api_key=api_key)
+else:
+    result = extract_text(sample_text, api_key=api_key)
 
-    if st.button("Extract fields"):
-        try:
-            if upload is not None and not use_sample:
-                text = read_document(upload, upload.name)
-            else:
-                with open(BASE / "sample_invoice.txt", "rb") as f:
-                    text = read_document(f, "sample_invoice.txt")
-            result = extract(text)
-        except RuntimeError as e:
-            st.error(str(e))
-        else:
-            if result["needs_review"]:
-                st.warning("Needs human review")
-            else:
-                st.success("Passed validation")
-            if result.get("missing_fields"):
-                st.write("Missing required fields:", ", ".join(result["missing_fields"]))
-            for p in result.get("problems", []):
-                st.write(f"- {p}")
-            st.json(result.get("data") or {})
-            log_event("extraction", {"needs_review": result["needs_review"], "problems": result.get("problems", [])})
+st.json(result)
+if result["needs_review"]:
+    st.warning("Some fields are missing or confidence is low. Human review is required.")
 
 # ---------- Tab 3: email triage ( human approval) ----------
 with tab_email:
