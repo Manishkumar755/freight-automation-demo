@@ -29,14 +29,14 @@ st.caption("Demo project. Rates and emails are sample data. A human approves eve
 with st.sidebar:
     st.subheader("Settings")
     try:
-        default_key = st.secrets["GEMINI_API_KEY"]
+        default_key = st.secrets["OPENROUTER_API_KEY"]
     except Exception:
         default_key = ""
     api_key = st.text_input(
-        "Gemini API key (optional)",
+        "OpenRouter API key (optional)",
         value=default_key,
         type="password",
-        help="Needed for document extraction and email triage. Get one from aistudio.google.com.",
+        help="Needed for document extraction and email triage. Create a key at openrouter.ai.",
     )
     st.caption("Quote engine works without a key. Document and email tools need one.")
 
